@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vattenstånd — Sea Level</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Courier+Prime:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sea-deep:   #0d2b3e;
+    --sea-mid:    #1a5276;
+    --sea-light:  #2980b9;
+    --foam:       #d6eaf8;
+    --sand:       #f0e6d3;
+    --sand-dark:  #c9b99a;
+    --text:       #0d2b3e;
+    --accent:     #c0392b;
+    --ink:        #1a1a2e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Courier Prime', monospace;
+    background: var(--sand);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* --- animated wave background --- */
+  .wave-bg {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 220px;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .wave-bg svg { width: 200%; height: 100%; animation: wave-scroll 12s linear infinite; }
+  @keyframes wave-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .wave-bg .w2 { animation-duration: 18s; animation-direction: reverse; opacity: 0.5; position: absolute; top: 30px; }
+
+  /* --- paper texture overlay --- */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 1; opacity: 0.6;
+  }
+
+  .container {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 14rem;
+    position: relative; z-index: 2;
+  }
+
+  /* --- header --- */
+  header {
+    text-align: center;
+    padding: 3rem 0 2rem;
+    border-bottom: 2px solid var(--sea-deep);
+    margin-bottom: 2.5rem;
+    position: relative;
+  }
+  header::after {
+    content: '⚓';
+    position: absolute; bottom: -1rem; left: 50%;
+    transform: translateX(-50%);
+    background: var(--sand);
+    padding: 0 0.8rem;
+    font-size: 1.2rem;
+  }
+  .title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.4rem, 6vw, 3.5rem);
+    color: var(--sea-deep);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+  .subtitle {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    color: var(--sea-mid);
+    font-size: 1.05rem;
+    margin-top: 0.4rem;
+  }
+  .source-note {
+    font-size: 0.72rem;
+    color: var(--sand-dark);
+    margin-top: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* --- station picker --- */
+  .station-bar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+  .station-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--sea-mid);
+    white-space: nowrap;
+  }
+  select {
+    flex: 1;
+    min-width: 200px;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.95rem;
+    padding: 0.55rem 0.9rem;
+    border: 2px solid var(--sea-deep);
+    background: var(--sand);
+    color: var(--text);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 0l6 8 6-8z' fill='%230d2b3e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.9rem center;
+    padding-right: 2.2rem;
+  }
+  select:focus { outline: none; border-color: var(--sea-light); }
+
+  /* --- current reading card --- */
+  .card {
+    border: 2px solid var(--sea-deep);
+    background: white;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+  .card::before {
+    content: attr(data-label);
+    position: absolute; top: -0.6rem; left: 1rem;
+    background: var(--sand);
+    padding: 0 0.5rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--sea-mid);
+  }
+
+  .reading-row {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .reading-value {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(3rem, 10vw, 5rem);
+    color: var(--sea-deep);
+    line-height: 1;
+  }
+  .reading-unit {
+    font-size: 1.2rem;
+    color: var(--sea-mid);
+    font-style: italic;
+  }
+  .reading-trend {
+    margin-left: auto;
+  }
+  .reading-time {
+    font-size: 0.78rem;
+    color: var(--sand-dark);
+    margin-top: 0.5rem;
+    letter-spacing: 0.04em;
+  }
+
+  /* water level bar */
+  .level-bar-wrap {
+    margin-top: 1rem;
+    height: 12px;
+    background: var(--foam);
+    border: 1px solid var(--sea-deep);
+    position: relative;
+    overflow: hidden;
+  }
+  .level-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--sea-light), var(--sea-deep));
+    transition: width 1s ease;
+    position: relative;
+  }
+  .level-bar-fill::after {
+    content: '';
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: white;
+    opacity: 0.6;
+    animation: shimmer 2s ease-in-out infinite;
+  }
+  @keyframes shimmer { 0%,100%{opacity:0.6} 50%{opacity:0.1} }
+  .level-bar-zero {
+    position: absolute; top: 0; bottom: 0;
+    width: 2px; background: var(--accent);
+    opacity: 0.7;
+  }
+  .level-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--sand-dark);
+    margin-top: 0.3rem;
+    letter-spacing: 0.04em;
+  }
+
+  /* --- chart --- */
+  .chart-wrap {
+    position: relative;
+    height: 180px;
+    margin-top: 0.5rem;
+  }
+  canvas { width: 100% !important; }
+
+  /* --- tide table --- */
+  .tide-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .tide-table th {
+    text-align: left;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--sea-mid);
+    padding: 0 0 0.4rem;
+    border-bottom: 1px solid var(--sea-deep);
+  }
+  .tide-table td {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--foam);
+    vertical-align: middle;
+  }
+  .tide-table tr:last-child td { border-bottom: none; }
+  .tide-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+  }
+  .high { background: var(--sea-deep); }
+  .low  { background: var(--sand-dark); }
+
+  /* --- status / error --- */
+  .status {
+    text-align: center;
+    padding: 2rem;
+    color: var(--sea-mid);
+    font-style: italic;
+    font-size: 0.9rem;
+  }
+  .error { color: var(--accent); font-style: normal; }
+
+  /* --- footer --- */
+  footer {
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--sand-dark);
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--sand-dark);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  footer a { color: var(--sea-mid); }
+
+  /* refresh button */
+  .refresh-btn {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.5rem 1.4rem;
+    border: 2px solid var(--sea-deep);
+    background: transparent;
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    color: var(--sea-deep);
+    transition: background 0.2s, color 0.2s;
+  }
+  .refresh-btn:hover { background: var(--sea-deep); color: var(--sand); }
+
+  @media (max-width: 500px) {
+    .container { padding: 1rem 1rem 14rem; }
+    .card { padding: 1.2rem; }
+  }
+
+</style>
+</head>
+<body>
+
+<!-- Wave background -->
+<div class="wave-bg">
+  <svg viewBox="0 0 1440 220" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,120 C90,70 270,170 360,120 C450,70 630,170 720,120 C810,70 990,170 1080,120 C1170,70 1350,170 1440,120 L1440,220 L0,220 Z" fill="#1a5276" opacity="0.18"/>
+    <path d="M0,138 C90,98 270,178 360,138 C450,98 630,178 720,138 C810,98 990,178 1080,138 C1170,98 1350,178 1440,138 L1440,220 L0,220 Z" fill="#0d2b3e" opacity="0.22"/>
+  </svg>
+  <svg class="w2" viewBox="0 0 1440 220" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,128 C120,83 240,173 360,128 C480,83 600,173 720,128 C840,83 960,173 1080,128 C1200,83 1320,173 1440,128 L1440,220 L0,220 Z" fill="#2980b9" opacity="0.12"/>
+  </svg>
+</div>
+
+<div class="container">
+  <header>
+    <div class="title">Vattenstånd</div>
+    <div class="subtitle">Sea Level along the Swedish Coast</div>
+    <div class="source-note">Data: SMHI Open Data · CC BY 4.0 SE</div>
+  </header>
+
+  <div class="station-bar">
+    <span class="station-label">Station</span>
+    <select id="stationSelect" onchange="loadStation()">
+      <option value="">— loading stations —</option>
+    </select>
+  </div>
+
+  <div id="mainContent">
+    <div class="status">Loading station data…</div>
+  </div>
+
+
+  <footer>
+    Sea level data from <a href="https://opendata.smhi.se" target="_blank">SMHI Open Data</a> ·
+    Parameter 13: Havsvattenstånd (RH2000) · Updates hourly
+  </footer>
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+// SMHI Oceanographical Observations REST API
+// Base: https://opendata-download-ocobs.smhi.se/api
+// Parameter 3 = Vattenstånd (water level, cm, RH2000)
+// ──────────────────────────────────────────────
+
+const SMHI  = 'https://opendata-download-ocobs.smhi.se/api';
+const PARAM = 13; // Havsvattenstånd minutvärde (cm)
+
+async function smhiFetch(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+let allStations = [];
+let chartInstance = null;
+
+// ── helpers ──────────────────────────────────
+function fmt(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString('sv-SE', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString('sv-SE', { hour:'2-digit', minute:'2-digit' });
+}
+function fmtDate(ts) {
+  return new Date(ts).toLocaleDateString('sv-SE', { weekday:'short', month:'short', day:'numeric' });
+}
+
+// ── fetch all stations for parameter 3 ────────
+async function loadStations() {
+  const url = `${SMHI}/version/1.0/parameter/${PARAM}.json`;
+  const j = await smhiFetch(url);
+  allStations = j.station || [];
+
+  // Sort by name
+  allStations.sort((a,b) => a.name.localeCompare(b.name, 'sv'));
+
+  const sel = document.getElementById('stationSelect');
+  sel.innerHTML = '';
+  allStations.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.name;
+    sel.appendChild(opt);
+  });
+
+  // Default: Kungsholmsfort (nice coastal station)
+  const preferred = ['Kungsholmsfort','Göteborg','Stockholm','Smögen','Oskarshamn','Visby'];
+  for (const name of preferred) {
+    const match = allStations.find(s => s.name.toLowerCase().includes(name.toLowerCase()));
+    if (match) { sel.value = match.id; break; }
+  }
+
+  loadStation();
+}
+
+// ── load & render chosen station ─────────────
+async function loadStation() {
+  const stationId = document.getElementById('stationSelect').value;
+  if (!stationId) return;
+  const station = allStations.find(s => s.id == stationId);
+  document.getElementById('mainContent').innerHTML = '<div class="status">Fetching water level data…</div>';
+
+  try {
+    // Try periods in order — not all stations support all periods
+    const periods = ['latest-months', 'latest-day', 'corrected-archive'];
+    let j = null;
+    for (const period of periods) {
+      try {
+        const url = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/${period}/data.json`;
+        const candidate = await smhiFetch(url);
+        if ((candidate.value || []).length) { j = candidate; break; }
+      } catch(e) { /* try next */ }
+    }
+    if (!j) throw new Error('No data available for this station');
+
+    const values = j.value || [];
+    if (!values.length) throw new Error('No readings available');
+
+    // Parse into {ts, v} pairs — SMHI returns cm
+    const series = values.map(v => ({ ts: v.date, v: parseFloat(v.value) }))
+                         .filter(p => !isNaN(p.v))
+                         .sort((a,b) => a.ts - b.ts);
+
+    const latest = series[series.length - 1];
+
+    // Slope: linear regression over last 3 hours for a stable derivative (cm/h)
+    const cutoff3h = latest.ts - 3 * 3600000;
+    const window3h = series.filter(p => p.ts >= cutoff3h);
+    let slopeCmPerHour = 0;
+    if (window3h.length >= 2) {
+      const n  = window3h.length;
+      const xs = window3h.map(p => (p.ts - window3h[0].ts) / 3600000); // hours
+      const ys = window3h.map(p => p.v);
+      const mx = xs.reduce((a,b) => a+b, 0) / n;
+      const my = ys.reduce((a,b) => a+b, 0) / n;
+      const num = xs.reduce((s,x,i) => s + (x-mx)*(ys[i]-my), 0);
+      const den = xs.reduce((s,x)   => s + (x-mx)**2, 0);
+      slopeCmPerHour = den > 0 ? num / den : 0;
+    }
+
+    // Min/max for bar scaling (use recent 7 days)
+    const cutoff7 = Date.now() - 7 * 86400000;
+    const recent7 = series.filter(p => p.ts >= cutoff7);
+    const vals7   = recent7.map(p => p.v);
+    const minV = Math.min(...vals7);
+    const maxV = Math.max(...vals7);
+    const range = Math.max(maxV - minV, 10);
+
+    // Bar: 0 cm is mean sea level; map -150…+150 to 0…100%
+    const SCALE = 150;
+    const barZero = 50; // percent
+    const barFill = Math.min(100, Math.max(0, 50 + (latest.v / SCALE) * 50));
+    const zeroPos = barZero;
+
+    // Detect local highs and lows (rough tide table from last 48h)
+    const cutoff48 = Date.now() - 48 * 3600 * 1000;
+    const recent48 = series.filter(p => p.ts >= cutoff48);
+    const extremes = [];
+    for (let i = 2; i < recent48.length - 2; i++) {
+      const w = [recent48[i-2].v, recent48[i-1].v, recent48[i].v, recent48[i+1].v, recent48[i+2].v];
+      const cur = recent48[i].v;
+      if (cur === Math.max(...w) && cur - Math.min(...w) > 3) {
+        extremes.push({ ts: recent48[i].ts, v: cur, type: 'high' });
+      } else if (cur === Math.min(...w) && Math.max(...w) - cur > 3) {
+        extremes.push({ ts: recent48[i].ts, v: cur, type: 'low' });
+      }
+    }
+    // Deduplicate extremes too close together (< 3h)
+    const dedupedExtremes = extremes.filter((e, i) =>
+      i === 0 || (e.ts - extremes[i-1].ts > 3 * 3600 * 1000)
+    );
+
+    // Chart: last 72 hours
+    const cutoff72 = Date.now() - 72 * 3600000;
+    const chartData = series.filter(p => p.ts >= cutoff72);
+
+    renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, maxV, dedupedExtremes, chartData);
+
+  } catch(e) {
+    document.getElementById('mainContent').innerHTML =
+      `<div class="status error">⚠ ${e.message}.<br>Try another station.</div>`;
+  }
+}
+
+function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, maxV, extremes, chartData) {
+  const levelCm = latest.v.toFixed(1);
+  const sign = latest.v >= 0 ? '+' : '';
+
+  // SVG trend arrow — angle clamped to ±60°, proportional to slope
+  // ±2 cm/h maps to ±45°; beyond ±4 cm/h saturates at ±60°
+  const maxSlope = 4;   // cm/h at saturation
+  const maxAngle = 60;  // degrees
+  const angleDeg = Math.max(-maxAngle, Math.min(maxAngle,
+    (slopeCmPerHour / maxSlope) * maxAngle
+  ));
+  // Rotate so 0° = rightward (→), positive = rising (↗), negative = falling (↘)
+  // SVG rotation: positive = clockwise, so rising slope = negative rotation
+  const svgAngle = -angleDeg;
+  const absSlope = Math.abs(slopeCmPerHour);
+  const slopeLabel = absSlope < 0.3  ? 'stabil'
+                   : absSlope < 1.5  ? (slopeCmPerHour > 0 ? 'stigande' : 'sjunkande')
+                   :                   (slopeCmPerHour > 0 ? 'snabbt stigande' : 'snabbt sjunkande');
+  const trendSvg = `<svg width="54" height="36" viewBox="0 0 54 36" fill="none"
+      xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
+    <g transform="translate(27,18) rotate(${svgAngle})">
+      <line x1="-20" y1="0" x2="16" y2="0"
+            stroke="var(--sea-deep)" stroke-width="2.5" stroke-linecap="round"/>
+      <polygon points="12,-5 22,0 12,5"
+               fill="var(--sea-deep)"/>
+    </g>
+  </svg>
+  <div style="font-size:0.68rem;color:var(--sea-mid);letter-spacing:0.04em;
+              text-align:center;margin-top:0.1rem">${slopeLabel}</div>`;
+
+  // Build extremes table rows
+  const extremeRows = dedupedTableRows(extremes);
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="card" data-label="Current Reading">
+      <div class="reading-row">
+        <div class="reading-value">${sign}${levelCm}</div>
+        <div class="reading-unit">cm</div>
+        <div class="reading-trend" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:60px">${trendSvg}</div>
+      </div>
+      <div class="reading-time">Last observation: ${fmt(latest.ts)}</div>
+      <div class="level-bar-wrap" title="Sea level relative to RH2000">
+        <div class="level-bar-fill" id="lvlBar" style="width:0%"></div>
+        <div class="level-bar-zero" style="left:${zeroPos}%"></div>
+      </div>
+      <div class="level-bar-labels">
+        <span>−150 cm</span><span>Mean (RH2000)</span><span>+150 cm</span>
+      </div>
+    </div>
+
+    <div class="card" data-label="Last 72 Hours">
+      <div class="chart-wrap">
+        <canvas id="lvlChart"></canvas>
+      </div>
+      <div style="font-size:0.7rem;color:var(--sand-dark);margin-top:0.5rem;letter-spacing:0.03em;">
+        Range shown: ${minV.toFixed(0)} – ${maxV.toFixed(0)} cm &nbsp;·&nbsp; Station: ${station.name}
+      </div>
+    </div>
+
+    ${extremeRows ? `
+    <div class="card" data-label="Recent Highs & Lows (48 h)">
+      <table class="tide-table">
+        <thead><tr>
+          <th>Type</th><th>Time</th><th>Date</th><th style="text-align:right">Level (cm)</th>
+        </tr></thead>
+        <tbody>${extremeRows}</tbody>
+      </table>
+    </div>` : ''}
+
+    <div style="text-align:center">
+      <button class="refresh-btn" onclick="loadStation()">↻ Refresh</button>
+    </div>
+  `;
+
+  // Animate bar after paint
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      const bar = document.getElementById('lvlBar');
+      if (bar) bar.style.width = barFill + '%';
+    }, 80);
+  });
+
+  // Draw chart
+  drawChart(chartData);
+}
+
+function dedupedTableRows(extremes) {
+  if (!extremes.length) return '';
+  return extremes.slice(-12).map(e => {
+    const cls  = e.type === 'high' ? 'high' : 'low';
+    const label = e.type === 'high' ? '▲ High' : '▼ Low';
+    const sign  = e.v >= 0 ? '+' : '';
+    return `<tr>
+      <td><span class="tide-dot ${cls}"></span>${label}</td>
+      <td>${fmtTime(e.ts)}</td>
+      <td>${fmtDate(e.ts)}</td>
+      <td style="text-align:right;font-weight:600">${sign}${e.v.toFixed(1)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Chart (vanilla canvas, no dependencies) ───
+function drawChart(data) {
+  const canvas = document.getElementById('lvlChart');
+  if (!canvas || !data.length) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth  || canvas.parentElement.offsetWidth;
+  const H = 180;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = { top: 16, right: 12, bottom: 28, left: 44 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top  - pad.bottom;
+
+  const vs   = data.map(p => p.v);
+  const minV = Math.min(...vs);
+  const maxV = Math.max(...vs);
+  const vRange = Math.max(maxV - minV, 10);
+  const vPad  = vRange * 0.12;
+  const vMin  = minV - vPad;
+  const vMax  = maxV + vPad;
+
+  const ts0 = data[0].ts;
+  const ts1 = data[data.length - 1].ts;
+  const tRange = ts1 - ts0 || 1;
+
+  const xOf = ts => pad.left + ((ts - ts0) / tRange) * cw;
+  const yOf = v  => pad.top  + (1 - (v - vMin) / (vMax - vMin)) * ch;
+
+  // Background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid & labels
+  ctx.strokeStyle = '#e8ddd0';
+  ctx.lineWidth = 1;
+  const nGrid = 4;
+  for (let i = 0; i <= nGrid; i++) {
+    const v = vMin + (vMax - vMin) * (i / nGrid);
+    const y = yOf(v);
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    ctx.fillStyle = '#a09070';
+    ctx.font = `10px 'Courier Prime', monospace`;
+    ctx.textAlign = 'right';
+    ctx.fillText((v >= 0 ? '+' : '') + v.toFixed(0), pad.left - 4, y + 4);
+  }
+
+  // Zero line
+  if (vMin < 0 && vMax > 0) {
+    const y0 = yOf(0);
+    ctx.save();
+    ctx.strokeStyle = '#c0392b';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(pad.left, y0); ctx.lineTo(pad.left + cw, y0); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Time labels (every 24h)
+  ctx.fillStyle = '#a09070';
+  ctx.font = `9px 'Courier Prime', monospace`;
+  ctx.textAlign = 'center';
+  const msDay = 86400000;
+  const firstMidnight = Math.ceil(ts0 / msDay) * msDay;
+  for (let t = firstMidnight; t <= ts1; t += msDay) {
+    const x = xOf(t);
+    ctx.fillText(fmtDate(t), x, H - 5);
+    ctx.save(); ctx.strokeStyle='#e0d5c5'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top+ch); ctx.stroke(); ctx.restore();
+  }
+
+  // Area fill
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+  grad.addColorStop(0,   'rgba(41,128,185,0.28)');
+  grad.addColorStop(1,   'rgba(41,128,185,0.02)');
+  ctx.beginPath();
+  ctx.moveTo(xOf(data[0].ts), yOf(data[0].v));
+  data.forEach(p => ctx.lineTo(xOf(p.ts), yOf(p.v)));
+  ctx.lineTo(xOf(data[data.length-1].ts), yOf(vMin - vPad));
+  ctx.lineTo(xOf(data[0].ts), yOf(vMin - vPad));
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(xOf(data[0].ts), yOf(data[0].v));
+  data.forEach(p => ctx.lineTo(xOf(p.ts), yOf(p.v)));
+  ctx.strokeStyle = '#1a5276';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Latest dot
+  const lp = data[data.length - 1];
+  ctx.beginPath();
+  ctx.arc(xOf(lp.ts), yOf(lp.v), 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#0d2b3e';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+
+
+// ── init ──────────────────────────────────────
+window.addEventListener('load', () => {
+  loadStations().catch(e => {
+    document.getElementById('mainContent').innerHTML =
+      `<div class="status error">⚠ Could not connect to SMHI API.<br>${e.message}</div>`;
+  });
+});
+</script>
+</body>
+</html>
