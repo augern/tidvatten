@@ -323,8 +323,18 @@
 
   <div class="station-bar">
     <span class="station-label">Station</span>
-    <select id="stationSelect" onchange="loadStation()">
+    <select id="stationSelect" onchange="savePrefs(); loadStation()">
       <option value="">— loading stations —</option>
+    </select>
+    <select id="rangeSelect" onchange="savePrefs(); applyRange()" style="flex:0;min-width:0">
+      <option value="72">3 dygn</option>
+      <option value="168">1 vecka</option>
+      <option value="336">2 veckor</option>
+      <option value="720">1 månad</option>
+      <option value="2160">3 månader</option>
+      <option value="4380">6 månader</option>
+      <option value="8760">1 år</option>
+      <option value="26280">3 år</option>
     </select>
   </div>
 
@@ -357,6 +367,7 @@ async function smhiFetch(url) {
 
 let allStations = [];
 let chartInstance = null;
+let fullSeries = [];   // full fetched series, reused when range changes
 
 // ── helpers ──────────────────────────────────
 function fmt(ts) {
@@ -389,11 +400,30 @@ async function loadStations() {
     sel.appendChild(opt);
   });
 
-  // Prefer Smögen; fall back down the list if not found
-  const preferred = ['Smögen','Kungsholmsfort','Göteborg','Stockholm','Oskarshamn','Visby'];
-  for (const name of preferred) {
-    const match = allStations.find(s => s.name.toLowerCase().includes(name.toLowerCase()));
-    if (match) { sel.value = match.id; break; }
+  // Restore saved range
+  try {
+    const savedRange = localStorage.getItem('hav_range');
+    if (savedRange) {
+      const rs = document.getElementById('rangeSelect');
+      if ([...rs.options].some(o => o.value === savedRange)) rs.value = savedRange;
+    }
+  } catch(e) {}
+
+  // Restore saved station, or prefer Smögen, or fall back
+  let restored = false;
+  try {
+    const savedId = localStorage.getItem('hav_station');
+    if (savedId && allStations.find(s => String(s.id) === savedId)) {
+      sel.value = savedId;
+      restored = true;
+    }
+  } catch(e) {}
+  if (!restored) {
+    const preferred = ['Smögen','Kungsholmsfort','Göteborg','Stockholm','Oskarshamn','Visby'];
+    for (const name of preferred) {
+      const match = allStations.find(s => s.name.toLowerCase().includes(name.toLowerCase()));
+      if (match) { sel.value = match.id; break; }
+    }
   }
 
   loadStation();
@@ -408,7 +438,10 @@ async function loadStation() {
 
   try {
     // Try periods in order — not all stations support all periods
-    const periods = ['latest-months', 'latest-day', 'corrected-archive'];
+    const rangeHours = parseInt(document.getElementById('rangeSelect').value) || 72;
+    const periods = rangeHours > 2160
+      ? ['corrected-archive', 'latest-months', 'latest-day']
+      : ['latest-months', 'latest-day', 'corrected-archive'];
     let j = null;
     for (const period of periods) {
       try {
@@ -444,19 +477,20 @@ async function loadStation() {
       slopeCmPerHour = den > 0 ? num / den : 0;
     }
 
-    // Min/max for bar scaling (use recent 7 days)
-    const cutoff7 = Date.now() - 7 * 86400000;
-    const recent7 = series.filter(p => p.ts >= cutoff7);
-    const vals7   = recent7.map(p => p.v);
-    const minV = Math.min(...vals7);
-    const maxV = Math.max(...vals7);
-    const range = Math.max(maxV - minV, 10);
+    // Min/max for bar scaling — use same window as the chart
+    const chartData0 = applyRangeFilter(series);
+    const chartVals  = chartData0.map(p => p.v);
+    const minV = Math.min(...chartVals);
+    const maxV = Math.max(...chartVals);
 
     // Bar: 0 cm is mean sea level; map -150…+150 to 0…100%
-    const SCALE = 150;
-    const barZero = 50; // percent
-    const barFill = Math.min(100, Math.max(0, 50 + (latest.v / SCALE) * 50));
-    const zeroPos = barZero;
+    // Scale bar dynamically to recent 7-day range + 20% padding, min ±30 cm
+    const barPad  = Math.max(30, (maxV - minV) * 0.2);
+    const barMin  = Math.min(minV - barPad, -10);  // always show a bit below zero
+    const barMax  = Math.max(maxV + barPad,  10);
+    const barRange = barMax - barMin;
+    const zeroPos = ((0 - barMin) / barRange) * 100;
+    const barFill = Math.min(100, Math.max(0, ((latest.v - barMin) / barRange) * 100));
 
     // Detect local highs and lows (rough tide table from last 48h)
     const cutoff48 = Date.now() - 48 * 3600 * 1000;
@@ -476,9 +510,9 @@ async function loadStation() {
       i === 0 || (e.ts - extremes[i-1].ts > 3 * 3600 * 1000)
     );
 
-    // Chart: last 72 hours
-    const cutoff72 = Date.now() - 72 * 3600000;
-    const chartData = series.filter(p => p.ts >= cutoff72);
+    // Store full series for range switching without re-fetching
+    fullSeries = series;
+    const chartData = applyRangeFilter(series);
 
     renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, maxV, dedupedExtremes, chartData);
 
@@ -534,7 +568,7 @@ function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, 
         <div class="level-bar-zero" style="left:${zeroPos}%"></div>
       </div>
       <div class="level-bar-labels">
-        <span>−150 cm</span><span>Medel (RH2000)</span><span>+150 cm</span>
+        <span>${barMin.toFixed(0)} cm</span><span>Medel (RH2000)</span><span>+${barMax.toFixed(0)} cm</span>
       </div>
     </div>
 
@@ -542,8 +576,8 @@ function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, 
       <div class="chart-wrap">
         <canvas id="lvlChart"></canvas>
       </div>
-      <div style="font-size:0.7rem;color:var(--sand-dark);margin-top:0.5rem;letter-spacing:0.03em;">
-        Visat intervall: ${minV.toFixed(0)} – ${maxV.toFixed(0)} cm &nbsp;·&nbsp; Station: ${station.name}
+      <div id="chartMeta" style="font-size:0.7rem;color:var(--sand-dark);margin-top:0.5rem;letter-spacing:0.03em;">
+        ${(()=>{const s=document.getElementById('rangeSelect');return s?s.options[s.selectedIndex].text:'3 dygn';})()}  · ${minV.toFixed(0)}–${maxV.toFixed(0)} cm · ${station.name}
       </div>
     </div>
 
@@ -727,6 +761,58 @@ function drawChart(data) {
 }
 
 
+
+// ── preferences ──────────────────────────────
+function savePrefs() {
+  try {
+    localStorage.setItem('hav_station', document.getElementById('stationSelect').value);
+    localStorage.setItem('hav_range',   document.getElementById('rangeSelect').value);
+  } catch(e) {}
+}
+
+function applyRangeFilter(series) {
+  const hours  = parseInt(document.getElementById('rangeSelect').value) || 72;
+  const cutoff = Date.now() - hours * 3600000;
+  return series.filter(p => p.ts >= cutoff);
+}
+
+async function applyRange() {
+  if (!fullSeries.length) return;
+  const hours        = parseInt(document.getElementById('rangeSelect').value) || 72;
+  const oldestLoaded = fullSeries[0].ts;
+  const needed       = Date.now() - hours * 3600000;
+  if (needed < oldestLoaded) {
+    // Need older data — re-fetch
+    await loadStation();
+  } else {
+    // Re-filter and redraw in place
+    const chartData = applyRangeFilter(fullSeries);
+    const canvasEl  = document.getElementById('lvlChart');
+    if (canvasEl) drawChart(chartData);
+    // Update bar scale to match new range
+    const chartVals = chartData.map(p => p.v);
+    const minV = Math.min(...chartVals);
+    const maxV = Math.max(...chartVals);
+    const barPad  = Math.max(30, (maxV - minV) * 0.2);
+    const barMin  = Math.min(minV - barPad, -10);
+    const barMax  = Math.max(maxV + barPad,  10);
+    const barRange = barMax - barMin;
+    const zeroPos  = ((0 - barMin) / barRange) * 100;
+    const barFill  = Math.min(100, Math.max(0, ((fullSeries[fullSeries.length-1].v - barMin) / barRange) * 100));
+    const barEl    = document.getElementById('lvlBar');
+    const zeroEl   = document.querySelector('.level-bar-zero');
+    const labelsEl = document.querySelector('.level-bar-labels');
+    if (barEl)    barEl.style.width = barFill + '%';
+    if (zeroEl)   zeroEl.style.left = zeroPos + '%';
+    if (labelsEl) labelsEl.innerHTML = `<span>${barMin.toFixed(0)} cm</span><span>Medel (RH2000)</span><span>+${barMax.toFixed(0)} cm</span>`;
+    const metaEl = document.getElementById('chartMeta');
+    if (metaEl) {
+      const s = document.getElementById('rangeSelect');
+      const rangeText = s ? s.options[s.selectedIndex].text : '';
+      metaEl.textContent = metaEl.textContent.replace(/^[^·]+·/, rangeText + ' ·');
+    }
+  }
+}
 
 // ── init ──────────────────────────────────────
 window.addEventListener('load', () => {
