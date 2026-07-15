@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vattenstånd — Sea Level</title>
+<title>Havsnivå</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Courier+Prime:ital@0;1&display=swap" rel="stylesheet">
 <style>
@@ -316,8 +316,8 @@
 
 <div class="container">
   <header>
-    <div class="title">Vattenstånd</div>
-    <div class="subtitle">Sea Level along the Swedish Coast</div>
+    <div class="title">Havsnivå</div>
+    <div class="subtitle">Havsnivå längs svenska kusten</div>
     <div class="source-note">Data: SMHI Open Data · CC BY 4.0 SE</div>
   </header>
 
@@ -329,13 +329,13 @@
   </div>
 
   <div id="mainContent">
-    <div class="status">Loading station data…</div>
+    <div class="status">Laddar stationslista…</div>
   </div>
 
 
   <footer>
-    Sea level data from <a href="https://opendata.smhi.se" target="_blank">SMHI Open Data</a> ·
-    Parameter 13: Havsvattenstånd (RH2000) · Updates hourly
+    Havsnivådata från <a href="https://opendata.smhi.se" target="_blank">SMHI Open Data</a> ·
+    Parameter 13: Havsvattenstånd (RH2000) · Uppdateras varje timme
   </footer>
 </div>
 
@@ -389,8 +389,8 @@ async function loadStations() {
     sel.appendChild(opt);
   });
 
-  // Default: Kungsholmsfort (nice coastal station)
-  const preferred = ['Kungsholmsfort','Göteborg','Stockholm','Smögen','Oskarshamn','Visby'];
+  // Prefer Smögen; fall back down the list if not found
+  const preferred = ['Smögen','Kungsholmsfort','Göteborg','Stockholm','Oskarshamn','Visby'];
   for (const name of preferred) {
     const match = allStations.find(s => s.name.toLowerCase().includes(name.toLowerCase()));
     if (match) { sel.value = match.id; break; }
@@ -404,7 +404,7 @@ async function loadStation() {
   const stationId = document.getElementById('stationSelect').value;
   if (!stationId) return;
   const station = allStations.find(s => s.id == stationId);
-  document.getElementById('mainContent').innerHTML = '<div class="status">Fetching water level data…</div>';
+  document.getElementById('mainContent').innerHTML = '<div class="status">Hämtar vattenstånd…</div>';
 
   try {
     // Try periods in order — not all stations support all periods
@@ -417,10 +417,10 @@ async function loadStation() {
         if ((candidate.value || []).length) { j = candidate; break; }
       } catch(e) { /* try next */ }
     }
-    if (!j) throw new Error('No data available for this station');
+    if (!j) throw new Error('Ingen data tillgänglig för denna station');
 
     const values = j.value || [];
-    if (!values.length) throw new Error('No readings available');
+    if (!values.length) throw new Error('Inga mätvärden tillgängliga');
 
     // Parse into {ts, v} pairs — SMHI returns cm
     const series = values.map(v => ({ ts: v.date, v: parseFloat(v.value) }))
@@ -484,7 +484,7 @@ async function loadStation() {
 
   } catch(e) {
     document.getElementById('mainContent').innerHTML =
-      `<div class="status error">⚠ ${e.message}.<br>Try another station.</div>`;
+      `<div class="status error">⚠ ${e.message}.<br>Prova en annan station.</div>`;
   }
 }
 
@@ -522,43 +522,43 @@ function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, 
   const extremeRows = dedupedTableRows(extremes);
 
   document.getElementById('mainContent').innerHTML = `
-    <div class="card" data-label="Current Reading">
+    <div class="card" data-label="Aktuellt värde">
       <div class="reading-row">
         <div class="reading-value">${sign}${levelCm}</div>
         <div class="reading-unit">cm</div>
         <div class="reading-trend" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:60px">${trendSvg}</div>
       </div>
-      <div class="reading-time">Last observation: ${fmt(latest.ts)}</div>
+      <div class="reading-time">Senaste mätning: ${fmt(latest.ts)}</div>
       <div class="level-bar-wrap" title="Sea level relative to RH2000">
         <div class="level-bar-fill" id="lvlBar" style="width:0%"></div>
         <div class="level-bar-zero" style="left:${zeroPos}%"></div>
       </div>
       <div class="level-bar-labels">
-        <span>−150 cm</span><span>Mean (RH2000)</span><span>+150 cm</span>
+        <span>−150 cm</span><span>Medel (RH2000)</span><span>+150 cm</span>
       </div>
     </div>
 
-    <div class="card" data-label="Last 72 Hours">
+    <div class="card" data-label="Senaste 72 timmarna">
       <div class="chart-wrap">
         <canvas id="lvlChart"></canvas>
       </div>
       <div style="font-size:0.7rem;color:var(--sand-dark);margin-top:0.5rem;letter-spacing:0.03em;">
-        Range shown: ${minV.toFixed(0)} – ${maxV.toFixed(0)} cm &nbsp;·&nbsp; Station: ${station.name}
+        Visat intervall: ${minV.toFixed(0)} – ${maxV.toFixed(0)} cm &nbsp;·&nbsp; Station: ${station.name}
       </div>
     </div>
 
     ${extremeRows ? `
-    <div class="card" data-label="Recent Highs & Lows (48 h)">
+    <div class="card" data-label="Höga och låga nivåer (48 h)">
       <table class="tide-table">
         <thead><tr>
-          <th>Type</th><th>Time</th><th>Date</th><th style="text-align:right">Level (cm)</th>
+          <th>Typ</th><th>Tid</th><th>Datum</th><th style="text-align:right">Nivå (cm)</th>
         </tr></thead>
         <tbody>${extremeRows}</tbody>
       </table>
     </div>` : ''}
 
     <div style="text-align:center">
-      <button class="refresh-btn" onclick="loadStation()">↻ Refresh</button>
+      <button class="refresh-btn" onclick="loadStation()">↻ Uppdatera</button>
     </div>
   `;
 
@@ -578,7 +578,7 @@ function dedupedTableRows(extremes) {
   if (!extremes.length) return '';
   return extremes.slice(-12).map(e => {
     const cls  = e.type === 'high' ? 'high' : 'low';
-    const label = e.type === 'high' ? '▲ High' : '▼ Low';
+    const label = e.type === 'high' ? '▲ Högvatten' : '▼ Lågvatten';
     const sign  = e.v >= 0 ? '+' : '';
     return `<tr>
       <td><span class="tide-dot ${cls}"></span>${label}</td>
@@ -603,7 +603,7 @@ function drawChart(data) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const pad = { top: 16, right: 12, bottom: 28, left: 44 };
+  const pad = { top: 16, right: 12, bottom: 32, left: 44 };
   const cw = W - pad.left - pad.right;
   const ch = H - pad.top  - pad.bottom;
 
@@ -651,17 +651,46 @@ function drawChart(data) {
     ctx.restore();
   }
 
-  // Time labels (every 24h)
-  ctx.fillStyle = '#a09070';
+  // Time labels — pick interval based on available pixel width
+  // Try 2h; fall back to 3h if labels would be closer than 38px apart
+  const msHour = 3600000;
+  const msDay  = 86400000;
+  const px2h   = cw / ((ts1 - ts0) / (2 * msHour));
+  const stepH  = px2h >= 38 ? 2 : 3;
+  const stepMs = stepH * msHour;
+
+  // Align first tick to a clean multiple of stepH from UTC midnight
+  const firstTick = Math.ceil(ts0 / stepMs) * stepMs;
+
   ctx.font = `9px 'Courier Prime', monospace`;
   ctx.textAlign = 'center';
-  const msDay = 86400000;
-  const firstMidnight = Math.ceil(ts0 / msDay) * msDay;
-  for (let t = firstMidnight; t <= ts1; t += msDay) {
-    const x = xOf(t);
-    ctx.fillText(fmtDate(t), x, H - 5);
-    ctx.save(); ctx.strokeStyle='#e0d5c5'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top+ch); ctx.stroke(); ctx.restore();
+
+  for (let t = firstTick; t <= ts1; t += stepMs) {
+    const x    = xOf(t);
+    const d    = new Date(t);
+    const h    = d.getUTCHours();
+    const isMidnight = h === 0;
+
+    // Grid line — stronger at midnight
+    ctx.save();
+    ctx.strokeStyle = isMidnight ? '#c8bfb0' : '#e0d5c5';
+    ctx.lineWidth   = isMidnight ? 1.5 : 0.75;
+    ctx.setLineDash(isMidnight ? [] : [2, 2]);
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ch); ctx.stroke();
+    ctx.restore();
+
+    // Label: date at midnight, time otherwise
+    ctx.fillStyle = isMidnight ? '#7a6f60' : '#a09070';
+    if (isMidnight) {
+      // Two-line: weekday above, date below
+      const wd  = d.toLocaleDateString('sv-SE', { weekday: 'short', timeZone: 'UTC' });
+      const day = d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      ctx.fillText(wd,  x, H - 14);
+      ctx.fillText(day, x, H - 4);
+    } else {
+      const hhmm = String(h).padStart(2, '0') + ':00';
+      ctx.fillText(hhmm, x, H - 5);
+    }
   }
 
   // Area fill
@@ -703,7 +732,7 @@ function drawChart(data) {
 window.addEventListener('load', () => {
   loadStations().catch(e => {
     document.getElementById('mainContent').innerHTML =
-      `<div class="status error">⚠ Could not connect to SMHI API.<br>${e.message}</div>`;
+      `<div class="status error">⚠ Kunde inte ansluta till SMHI:s API.<br>${e.message}</div>`;
   });
 });
 </script>
