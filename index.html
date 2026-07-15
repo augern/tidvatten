@@ -439,29 +439,49 @@ async function loadStation() {
   document.getElementById('mainContent').innerHTML = '<div class="status">Hämtar vattenstånd…</div>';
 
   try {
-    // Fetch archive (long history) + recent periods separately and concat.
-    // Each source covers its own time range; we deduplicate by timestamp but
-    // don't overwrite — first value seen wins — so each segment stays consistent
-    // within itself and there's no risk of a step change at the join.
-    const allValues = new Map(); // keyed by timestamp → deduplicate
-    for (const period of ['corrected-archive', 'latest-months', 'latest-day']) {
+    // Strategy: corrected-archive (CSV, long history) + latest-months + latest-day (JSON, recent)
+    // First-seen wins on timestamp overlap so each source stays internally consistent.
+    const allPoints = new Map(); // ts → {ts, v}
+
+    // 1. corrected-archive: CSV-only, semicolon-separated, multi-line header
+    try {
+      const csvUrl = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/corrected-archive/data.csv`;
+      const csvResp = await fetch(csvUrl);
+      if (csvResp.ok) {
+        const csvText = await csvResp.text();
+        const lines = csvText.split('\n');
+        // Skip header lines until we hit the data (lines starting with a 4-digit year)
+        for (const line of lines) {
+          const cols = line.trim().split(';');
+          if (cols.length < 3) continue;
+          const dateStr = cols[0]; // e.g. "2023-06-01"
+          const timeStr = cols[1]; // e.g. "12:00:00"
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+          const ts = new Date(`${dateStr}T${timeStr}Z`).getTime();
+          const v  = parseFloat(cols[2].replace(',', '.'));
+          if (!isNaN(ts) && !isNaN(v) && !allPoints.has(ts)) {
+            allPoints.set(ts, { ts, v });
+          }
+        }
+      }
+    } catch(e) { /* archive not available */ }
+
+    // 2. JSON periods for recent data not yet in archive
+    for (const period of ['latest-months', 'latest-day']) {
       try {
         const url = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/${period}/data.json`;
-        const candidate = await smhiFetch(url);
-        (candidate.value || []).forEach(v => {
-          if (!allValues.has(v.date)) allValues.set(v.date, v);
+        const j = await smhiFetch(url);
+        (j.value || []).forEach(v => {
+          if (!allPoints.has(v.date)) allPoints.set(v.date, { ts: v.date, v: parseFloat(v.value) });
         });
-      } catch(e) { /* period not available for this station */ }
+      } catch(e) { /* period not available */ }
     }
-    if (!allValues.size) throw new Error('Ingen data tillgänglig för denna station');
 
-    const values = [...allValues.values()];
-    if (!values.length) throw new Error('Inga mätvärden tillgängliga');
+    if (!allPoints.size) throw new Error('Ingen data tillgänglig för denna station');
 
-    // Parse into {ts, v} pairs — SMHI returns cm
-    const series = values.map(v => ({ ts: v.date, v: parseFloat(v.value) }))
-                         .filter(p => !isNaN(p.v))
-                         .sort((a,b) => a.ts - b.ts);
+    const series = [...allPoints.values()]
+                     .filter(p => !isNaN(p.v))
+                     .sort((a,b) => a.ts - b.ts);
 
     const latest = series[series.length - 1];
 
