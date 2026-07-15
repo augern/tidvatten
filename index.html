@@ -328,6 +328,7 @@
     </select>
     <span class="station-label">Tidsintervall</span>
     <select id="rangeSelect" onchange="savePrefs(); applyRange()">
+      <option value="24">1 dygn</option>
       <option value="72">3 dygn</option>
       <option value="168">1 vecka</option>
       <option value="336">2 veckor</option>
@@ -438,22 +439,23 @@ async function loadStation() {
   document.getElementById('mainContent').innerHTML = '<div class="status">Hämtar vattenstånd…</div>';
 
   try {
-    // Try periods in order — not all stations support all periods
-    const rangeHours = parseInt(document.getElementById('rangeSelect').value) || 72;
-    const periods = rangeHours > 2160
-      ? ['corrected-archive', 'latest-months', 'latest-day']
-      : ['latest-months', 'latest-day', 'corrected-archive'];
-    let j = null;
-    for (const period of periods) {
+    // Fetch archive (long history) + recent periods separately and concat.
+    // Each source covers its own time range; we deduplicate by timestamp but
+    // don't overwrite — first value seen wins — so each segment stays consistent
+    // within itself and there's no risk of a step change at the join.
+    const allValues = new Map(); // keyed by timestamp → deduplicate
+    for (const period of ['corrected-archive', 'latest-months', 'latest-day']) {
       try {
         const url = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/${period}/data.json`;
         const candidate = await smhiFetch(url);
-        if ((candidate.value || []).length) { j = candidate; break; }
-      } catch(e) { /* try next */ }
+        (candidate.value || []).forEach(v => {
+          if (!allValues.has(v.date)) allValues.set(v.date, v);
+        });
+      } catch(e) { /* period not available for this station */ }
     }
-    if (!j) throw new Error('Ingen data tillgänglig för denna station');
+    if (!allValues.size) throw new Error('Ingen data tillgänglig för denna station');
 
-    const values = j.value || [];
+    const values = [...allValues.values()];
     if (!values.length) throw new Error('Inga mätvärden tillgängliga');
 
     // Parse into {ts, v} pairs — SMHI returns cm
