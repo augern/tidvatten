@@ -100,11 +100,11 @@
 
   /* --- station picker --- */
   .station-bar {
-    display: flex;
-    gap: 0.75rem;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.5rem 0.75rem;
     align-items: center;
     margin-bottom: 2rem;
-    flex-wrap: wrap;
   }
   .station-label {
     font-size: 0.75rem;
@@ -114,8 +114,8 @@
     white-space: nowrap;
   }
   select {
-    flex: 1;
-    min-width: 200px;
+    width: 100%;
+    min-width: 0;
     font-family: 'Courier Prime', monospace;
     font-size: 0.95rem;
     padding: 0.55rem 0.9rem;
@@ -326,7 +326,8 @@
     <select id="stationSelect" onchange="savePrefs(); loadStation()">
       <option value="">— loading stations —</option>
     </select>
-    <select id="rangeSelect" onchange="savePrefs(); applyRange()" style="flex:0;min-width:0">
+    <span class="station-label">Tidsintervall</span>
+    <select id="rangeSelect" onchange="savePrefs(); applyRange()">
       <option value="72">3 dygn</option>
       <option value="168">1 vecka</option>
       <option value="336">2 veckor</option>
@@ -514,7 +515,7 @@ async function loadStation() {
     fullSeries = series;
     const chartData = applyRangeFilter(series);
 
-    renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, maxV, dedupedExtremes, chartData);
+    renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, barMin, barMax, minV, maxV, dedupedExtremes, chartData);
 
   } catch(e) {
     document.getElementById('mainContent').innerHTML =
@@ -522,7 +523,7 @@ async function loadStation() {
   }
 }
 
-function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, minV, maxV, extremes, chartData) {
+function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, barMin, barMax, minV, maxV, extremes, chartData) {
   const levelCm = latest.v.toFixed(1);
   const sign = latest.v >= 0 ? '+' : '';
 
