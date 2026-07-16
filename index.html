@@ -334,9 +334,9 @@
       <option value="336">2 veckor</option>
       <option value="720">1 månad</option>
       <option value="2160">3 månader</option>
-      <option value="4380">6 månader</option>
-      <option value="8760">1 år</option>
-      <option value="26280">3 år</option>
+      <option value="4380" disabled>6 månader</option>
+      <option value="8760" disabled>1 år</option>
+      <option value="26280" disabled>3 år</option>
     </select>
   </div>
 
@@ -439,40 +439,45 @@ async function loadStation() {
   document.getElementById('mainContent').innerHTML = '<div class="status">Hämtar vattenstånd…</div>';
 
   try {
-    // Strategy: corrected-archive (CSV, long history) + latest-months + latest-day (JSON, recent)
-    // First-seen wins on timestamp overlap so each source stays internally consistent.
-    const allPoints = new Map(); // ts → {ts, v}
+    // Strategy: for short ranges use JSON only (fast); for long ranges also fetch
+    // the corrected-archive CSV (slow, full history, no server-side date filter).
+    const rangeHours   = parseInt(document.getElementById('rangeSelect').value) || 72;
+    const needsArchive = rangeHours > 2160; // > ~3 months → need archive CSV
+    const allPoints = new Map(); // ts → {ts, v}, first-seen wins
 
-    // 1. corrected-archive: CSV-only, semicolon-separated, multi-line header
-    try {
-      const csvUrl = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/corrected-archive/data.csv`;
-      const csvResp = await fetch(csvUrl);
-      if (csvResp.ok) {
-        const csvText = await csvResp.text();
-        const lines = csvText.split('\n');
-        // Skip header lines until we hit the data (lines starting with a 4-digit year)
-        for (const line of lines) {
-          const cols = line.trim().split(';');
-          if (cols.length < 3) continue;
-          const dateStr = cols[0]; // e.g. "2023-06-01"
-          const timeStr = cols[1]; // e.g. "12:00:00"
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
-          const ts = new Date(`${dateStr}T${timeStr}Z`).getTime();
-          const v  = parseFloat(cols[2].replace(',', '.'));
-          if (!isNaN(ts) && !isNaN(v) && !allPoints.has(ts)) {
-            allPoints.set(ts, { ts, v });
+    // 1. corrected-archive CSV — only fetched when range demands it
+    if (needsArchive) {
+      try {
+        const csvUrl = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/corrected-archive/data.csv`;
+        const csvResp = await fetch(csvUrl);
+        if (csvResp.ok) {
+          const csvText = await csvResp.text();
+          const cutoff  = Date.now() - rangeHours * 3600000;
+          for (const line of csvText.split('\n')) {
+            const cols = line.trim().split(';');
+            if (cols.length < 3) continue;
+            const dateStr = cols[0];
+            const timeStr = cols[1];
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+            const ts = new Date(`${dateStr}T${timeStr}Z`).getTime();
+            if (ts < cutoff) continue;   // skip rows outside selected range
+            const v = parseFloat(cols[2].replace(',', '.'));
+            if (!isNaN(ts) && !isNaN(v) && !allPoints.has(ts)) {
+              allPoints.set(ts, { ts, v });
+            }
           }
         }
-      }
-    } catch(e) { /* archive not available */ }
+      } catch(e) { /* archive not available */ }
+    }
 
-    // 2. JSON periods for recent data not yet in archive
+    // 2. JSON periods for recent data (always fetched)
     for (const period of ['latest-months', 'latest-day']) {
       try {
         const url = `${SMHI}/version/1.0/parameter/${PARAM}/station/${stationId}/period/${period}/data.json`;
         const j = await smhiFetch(url);
         (j.value || []).forEach(v => {
-          if (!allPoints.has(v.date)) allPoints.set(v.date, { ts: v.date, v: parseFloat(v.value) });
+          const ts = typeof v.date === 'number' ? v.date : new Date(v.date).getTime();
+          if (!isNaN(ts) && !allPoints.has(ts)) allPoints.set(ts, { ts, v: parseFloat(v.value) });
         });
       } catch(e) { /* period not available */ }
     }
@@ -595,7 +600,7 @@ function renderContent(station, latest, slopeCmPerHour, barFill, zeroPos, barMin
       </div>
     </div>
 
-    <div class="card" data-label="Senaste 72 timmarna">
+    <div class="card" data-label="${(()=>{const s=document.getElementById('rangeSelect');return s?s.options[s.selectedIndex].text:'Historik';})()}">
       <div class="chart-wrap">
         <canvas id="lvlChart"></canvas>
       </div>
@@ -804,8 +809,10 @@ async function applyRange() {
   const hours        = parseInt(document.getElementById('rangeSelect').value) || 72;
   const oldestLoaded = fullSeries[0].ts;
   const needed       = Date.now() - hours * 3600000;
-  if (needed < oldestLoaded) {
-    // Need older data — re-fetch
+  const needsArchive = rangeHours > 2160;
+  const hadArchive   = fullSeries.length > 0 && (Date.now() - fullSeries[0].ts) > 2160 * 3600000;
+  if (needed < oldestLoaded || (needsArchive && !hadArchive)) {
+    // Need older data or archive not yet loaded — re-fetch
     await loadStation();
   } else {
     // Re-filter and redraw in place
